@@ -31,7 +31,9 @@ import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
 import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.Requests;
+import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.coordination.CoordinationState;
 import org.elasticsearch.cluster.metadata.IndexGraveyard;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.Metadata;
@@ -40,7 +42,6 @@ import org.elasticsearch.cluster.routing.IndexShardRoutingTable;
 import org.elasticsearch.cluster.routing.RoutingTable;
 import org.elasticsearch.cluster.routing.ShardRoutingState;
 import org.elasticsearch.cluster.routing.UnassignedInfo;
-import org.elasticsearch.common.CheckedConsumer;
 import org.elasticsearch.common.Priority;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.BoundTransportAddress;
@@ -422,15 +423,15 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         }
         ClusterState state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
 
-        final IndexMetadata metaData = state.getMetadata().index(tableName);
-        final IndexMetadata brokenMeta = IndexMetadata.builder(metaData).settings(Settings.builder().put(metaData.getSettings())
+        final IndexMetadata metadata = state.getMetadata().index(tableName);
+        final IndexMetadata.Builder brokenMeta = IndexMetadata.builder(metadata).settings(Settings.builder().put(metadata.getSettings())
                 .put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.minimumIndexCompatibilityVersion().internalId)
                 // this is invalid but should be archived
                 .put("index.similarity.BM25.type", "classic")
                 // this one is not validated ahead of time and breaks allocation
                 .put("index.analysis.filter.myCollator.type", "icu_collation")
-        ).build();
-        writeBrokenMeta(metaStateService -> metaStateService.writeIndexAndUpdateManifest("broken metadata", brokenMeta));
+                .put("index.analysis.filter.myCollator.type", "icu_collation"));
+        restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(Metadata.builder(state.getMetadata()).put(brokenMeta)));
 
         // check that the cluster does not keep reallocating shards
         assertBusy(() -> {
@@ -447,12 +448,12 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         execute("alter table test close");
 
         state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
-        assertEquals(IndexMetadata.State.CLOSE, state.getMetadata().index(metaData.getIndex()).getState());
-        assertEquals("classic", state.getMetadata().index(metaData.getIndex()).getSettings().get("archived.index.similarity.BM25.type"));
+        assertEquals(IndexMetadata.State.CLOSE, state.getMetadata().index(metadata.getIndex()).getState());
+        assertEquals("classic", state.getMetadata().index(metadata.getIndex()).getSettings().get("archived.index.similarity.BM25.type"));
         // try to open it with the broken setting - fail again!
         assertThrows(
             () -> execute("alter table test open"),
-            isSQLError(is("Failed to verify index " + metaData.getIndex().getName()),
+            isSQLError(is("Failed to verify index " + metadata.getIndex().getName()),
                        INTERNAL_ERROR,
                        INTERNAL_SERVER_ERROR,
                        5000)
@@ -500,10 +501,10 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         }
         ClusterState state = client().admin().cluster().prepareState().get().getState();
 
-        final IndexMetadata metaData = state.getMetadata().index(tableName);
-        final IndexMetadata brokenMeta = IndexMetadata.builder(metaData).settings(metaData.getSettings()
-                .filter((s) -> "index.analysis.analyzer.test.tokenizer".equals(s) == false)).build();
-        writeBrokenMeta(metaStateService -> metaStateService.writeIndexAndUpdateManifest("broken metadata", brokenMeta));
+        final IndexMetadata metadata = state.getMetadata().index(tableName);
+        final IndexMetadata.Builder brokenMeta = IndexMetadata.builder(metadata).settings(metadata.getSettings()
+                .filter((s) -> "index.analysis.analyzer.test.tokenizer".equals(s) == false));
+        restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(Metadata.builder(state.getMetadata()).put(brokenMeta)));
 
         // check that the cluster does not keep reallocating shards
         assertBusy(() -> {
@@ -523,7 +524,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         // try to open it with the broken setting - fail again!
         assertThrows(
             () -> execute("alter table test open"),
-            isSQLError(is("Failed to verify index " + metaData.getIndex().getName()),
+            isSQLError(is("Failed to verify index " + metadata.getIndex().getName()),
                        INTERNAL_ERROR,
                        INTERNAL_SERVER_ERROR,
                        5000)
@@ -551,11 +552,11 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         }
         ClusterState state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
 
-        final Metadata metaData = state.getMetadata();
-        final Metadata brokenMeta = Metadata.builder(metaData).persistentSettings(Settings.builder()
-                .put(metaData.persistentSettings()).put("this.is.unknown", true)
+        final Metadata metadata = state.getMetadata();
+        final Metadata brokenMeta = Metadata.builder(metadata).persistentSettings(Settings.builder()
+                .put(metadata.persistentSettings()).put("this.is.unknown", true)
                 .put(SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey(), "broken").build()).build();
-        writeBrokenMeta(metaStateService -> metaStateService.writeGlobalStateAndUpdateManifest("broken metadata", brokenMeta));
+        restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(brokenMeta));
 
         ensureYellow(tableName); // wait for state recovery
         state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
@@ -575,14 +576,19 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         assertThat(response.rowCount(), is(1L));
     }
 
-    private void writeBrokenMeta(CheckedConsumer<MetaStateService, IOException> writer) throws Exception {
-        Map<String, MetaStateService> metaStateServices = Stream.of(internalCluster().getNodeNames())
-            .collect(Collectors.toMap(Function.identity(), nodeName -> internalCluster().getInstance(MetaStateService.class, nodeName)));
+    private void restartNodesOnBrokenClusterState(ClusterState.Builder clusterStateBuilder) throws Exception {
+        Map<String, LucenePersistedStateFactory> lucenePersistedStateFactories = Stream.of(internalCluster().getNodeNames())
+            .collect(Collectors.toMap(Function.identity(),
+                                      nodeName -> internalCluster().getInstance(LucenePersistedStateFactory.class, nodeName)));
+        final ClusterState clusterState = clusterStateBuilder.build();
         internalCluster().fullRestart(new RestartCallback(){
             @Override
             public Settings onNodeStopped(String nodeName) throws Exception {
-                final MetaStateService metaStateService = metaStateServices.get(nodeName);
-                writer.accept(metaStateService);
+                final LucenePersistedStateFactory lucenePersistedStateFactory = lucenePersistedStateFactories.get(nodeName);
+                try (CoordinationState.PersistedState persistedState = lucenePersistedStateFactory.loadPersistedState(
+                    (v, m) -> ClusterState.builder(ClusterName.DEFAULT).version(v).metadata(m).build())) {
+                    persistedState.setLastAcceptedState(clusterState);
+                }
                 return super.onNodeStopped(nodeName);
             }
         });

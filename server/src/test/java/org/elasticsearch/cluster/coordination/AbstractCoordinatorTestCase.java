@@ -746,14 +746,11 @@ public class AbstractCoordinatorTestCase extends ESTestCase {
                         final MetaStateService metaStateService = new MetaStateService(nodeEnvironment, xContentRegistry());
                         final Metadata updatedMetadata = adaptGlobalMetadata.apply(oldState.getLastAcceptedState().metadata());
                         if (updatedMetadata != oldState.getLastAcceptedState().metadata()) {
-                            metaStateService.writeGlobalStateAndUpdateManifest("update global state", updatedMetadata);
+                            throw new AssertionError("TODO adapting persistent metadata is not supported yet");
                         }
                         final long updatedTerm = adaptCurrentTerm.apply(oldState.getCurrentTerm());
                         if (updatedTerm != oldState.getCurrentTerm()) {
-                            final Manifest manifest = metaStateService.loadManifestOrEmpty();
-                            metaStateService.writeManifestAndCleanup("update term",
-                                new Manifest(updatedTerm, manifest.getClusterStateVersion(), manifest.getGlobalGeneration(),
-                                    manifest.getIndexGenerations()));
+                            throw new AssertionError("TODO adapting persistent current term is not supported yet");
                         }
                         final MockGatewayMetaState gatewayMetaState = new MockGatewayMetaState(newLocalNode);
                         gatewayMetaState.start(Settings.EMPTY, nodeEnvironment, xContentRegistry());
@@ -855,7 +852,11 @@ public class AbstractCoordinatorTestCase extends ESTestCase {
 
             @Override
             public void close() {
-                assertTrue(openPersistedStates.remove(this));
+                try {
+                    delegate.close();
+                } catch (IOException e) {
+                    throw new AssertionError("unexpected", e);
+                }
             }
         }
 

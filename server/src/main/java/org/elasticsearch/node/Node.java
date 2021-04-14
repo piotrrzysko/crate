@@ -120,6 +120,7 @@ import org.elasticsearch.gateway.GatewayAllocator;
 import org.elasticsearch.gateway.GatewayMetaState;
 import org.elasticsearch.gateway.GatewayModule;
 import org.elasticsearch.gateway.GatewayService;
+import org.elasticsearch.gateway.LucenePersistedStateFactory;
 import org.elasticsearch.gateway.MetaStateService;
 import org.elasticsearch.http.HttpServerTransport;
 import org.elasticsearch.index.IndexSettings;
@@ -386,6 +387,8 @@ public class Node implements Closeable {
                 ClusterModule.getNamedXWriteables().stream())
                 .flatMap(Function.identity()).collect(toList()));
             final MetaStateService metaStateService = new MetaStateService(nodeEnvironment, xContentRegistry);
+            final LucenePersistedStateFactory lucenePersistedStateFactory
+                = new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, bigArrays);
 
             // collect engine factory providers from server and from plugins
             final Collection<EnginePlugin> enginePlugins = pluginsService.filterPlugins(EnginePlugin.class);
@@ -535,6 +538,7 @@ public class Node implements Closeable {
                     b.bind(NamedWriteableRegistry.class).toInstance(namedWriteableRegistry);
                     b.bind(MetadataUpgrader.class).toInstance(metadataUpgrader);
                     b.bind(MetaStateService.class).toInstance(metaStateService);
+                    b.bind(LucenePersistedStateFactory.class).toInstance(lucenePersistedStateFactory);
                     b.bind(IndicesService.class).toInstance(indicesService);
                     b.bind(AliasValidator.class).toInstance(aliasValidator);
                     b.bind(MetadataCreateIndexService.class).toInstance(metadataCreateIndexService);
@@ -708,7 +712,8 @@ public class Node implements Closeable {
             clusterService,
             injector.getInstance(MetaStateService.class),
             injector.getInstance(MetadataIndexUpgradeService.class),
-            injector.getInstance(MetadataUpgrader.class)
+            injector.getInstance(MetadataUpgrader.class),
+            injector.getInstance(LucenePersistedStateFactory.class)
         );
         // we load the global state here (the persistent part of the cluster state stored on disk) to
         // pass it to the bootstrap checks to allow plugins to enforce certain preconditions based on the recovered state.
@@ -864,6 +869,8 @@ public class Node implements Closeable {
         toClose.add(injector.getInstance(GatewayService.class));
         toClose.add(() -> stopWatch.stop().start("transport"));
         toClose.add(injector.getInstance(TransportService.class));
+        toClose.add(() -> stopWatch.stop().start("gateway_meta_state"));
+        toClose.add(injector.getInstance(GatewayMetaState.class));
 
         for (LifecycleComponent plugin : pluginLifecycleComponents) {
             toClose.add(() -> stopWatch.stop().start("plugin(" + plugin.getClass().getName() + ")"));
