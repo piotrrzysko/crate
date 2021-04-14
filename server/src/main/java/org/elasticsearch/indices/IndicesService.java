@@ -549,7 +549,7 @@ public class IndicesService extends AbstractLifecycleComponent
                     throw new IllegalStateException("Can't delete unassigned index store for [" + indexName + "] - it's still part of " +
                                                     "the cluster state [" + index.getIndexUUID() + "] [" + metadata.getIndexUUID() + "]");
                 }
-                deleteIndexStore(reason, metadata, clusterState);
+                deleteIndexStore(reason, metadata);
             } catch (Exception e) {
                 LOGGER.warn(() -> new ParameterizedMessage("[{}] failed to delete unassigned index (reason [{}])", metadata.getIndex(), reason), e);
             }
@@ -562,22 +562,13 @@ public class IndicesService extends AbstractLifecycleComponent
      *
      * Package private for testing
      */
-    void deleteIndexStore(String reason, IndexMetadata metadata, ClusterState clusterState) throws IOException {
+    void deleteIndexStore(String reason, IndexMetadata metadata) throws IOException {
         if (nodeEnv.hasNodeFile()) {
             synchronized (this) {
                 Index index = metadata.getIndex();
                 if (hasIndex(index)) {
                     String localUUid = indexService(index).indexUUID();
                     throw new IllegalStateException("Can't delete index store for [" + index.getName() + "] - it's still part of the indices service [" + localUUid + "] [" + metadata.getIndexUUID() + "]");
-                }
-
-                if (clusterState.metadata().hasIndex(index.getName()) && (clusterState.nodes().getLocalNode().isMasterNode() == true)) {
-                    // we do not delete the store if it is a master eligible node and the index is still in the cluster state
-                    // because we want to keep the meta data for indices around even if no shards are left here
-                    final IndexMetadata idxMeta = clusterState.metadata().index(index.getName());
-                    throw new IllegalStateException("Can't delete index store for [" + index.getName() + "] - it's still part of the " +
-                                                    "cluster state [" + idxMeta.getIndexUUID() + "] [" + metadata.getIndexUUID() + "], " +
-                                                    "we are master eligible, so will keep the index metadata even if no shards are left.");
                 }
             }
             final IndexSettings indexSettings = buildIndexSettings(metadata);
@@ -654,12 +645,11 @@ public class IndicesService extends AbstractLifecycleComponent
         nodeEnv.deleteShardDirectorySafe(shardId, indexSettings);
         LOGGER.debug("{} deleted shard reason [{}]", shardId, reason);
 
-        if (clusterState.nodes().getLocalNode().isMasterNode() == false && // master nodes keep the index meta data, even if having no shards..
-                canDeleteIndexContents(shardId.getIndex(), indexSettings)) {
+        if (canDeleteIndexContents(shardId.getIndex(), indexSettings)) {
             if (nodeEnv.findAllShardIds(shardId.getIndex()).isEmpty()) {
                 try {
                     // note that deleteIndexStore have more safety checks and may throw an exception if index was concurrently created.
-                    deleteIndexStore("no longer used", metadata, clusterState);
+                    deleteIndexStore("no longer used", metadata);
                 } catch (Exception e) {
                     // wrap the exception to indicate we already deleted the shard
                     throw new ElasticsearchException("failed to delete unused index after deleting its last shard (" + shardId + ")", e);

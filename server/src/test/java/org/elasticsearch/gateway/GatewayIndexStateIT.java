@@ -52,10 +52,13 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.Scope;
 import org.elasticsearch.test.InternalTestCluster.RestartCallback;
+import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -107,7 +110,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         assertThat(stateResponse.getState().metadata().index(tableName).getState(), equalTo(IndexMetadata.State.OPEN));
         assertThat(stateResponse.getState().routingTable().index(tableName).shards().size(), equalTo(numPrimaries));
         assertThat(stateResponse.getState().routingTable().index(tableName).shardsWithState(ShardRoutingState.STARTED).size(),
-            equalTo(totalNumShards));
+                   equalTo(totalNumShards));
 
         logger.info("--> insert a simple document");
         execute("insert into test (id) values (1)");
@@ -147,7 +150,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         assertThat(stateResponse.getState().metadata().index(tableName).getState(), equalTo(IndexMetadata.State.OPEN));
         assertThat(stateResponse.getState().routingTable().index(tableName).shards().size(), equalTo(numPrimaries));
         assertThat(stateResponse.getState().routingTable().index(tableName).shardsWithState(ShardRoutingState.STARTED).size(),
-            equalTo(totalNumShards));
+                   equalTo(totalNumShards));
 
         logger.info("--> trying to get the indexed document on the first index");
         execute("select id from test where id = 1");
@@ -188,7 +191,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         assertThat(stateResponse.getState().metadata().index(tableName).getState(), equalTo(IndexMetadata.State.OPEN));
         assertThat(stateResponse.getState().routingTable().index(tableName).shards().size(), equalTo(numPrimaries));
         assertThat(stateResponse.getState().routingTable().index(tableName).shardsWithState(ShardRoutingState.STARTED).size(),
-            equalTo(totalNumShards));
+                   equalTo(totalNumShards));
 
         logger.info("--> trying to get the indexed document on the first round (before close and shutdown)");
         execute("select id from test where id = 1");
@@ -311,7 +314,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         final List<String> nodes;
         logger.info("--> starting a cluster with " + numNodes + " nodes");
         nodes = internalCluster().startNodes(numNodes,
-            Settings.builder().put(IndexGraveyard.SETTING_MAX_TOMBSTONES.getKey(), randomIntBetween(10, 100)).build());
+                                             Settings.builder().put(IndexGraveyard.SETTING_MAX_TOMBSTONES.getKey(), randomIntBetween(10, 100)).build());
         logger.info("--> create an index");
         //createIndex(indexName);
         execute("create table my_schema.test (id int) with (number_of_replicas = 0)");
@@ -417,20 +420,20 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
             internalCluster().startNode();
             client().admin().cluster()
                 .health(Requests.clusterHealthRequest()
-                    .waitForGreenStatus()
-                    .waitForEvents(Priority.LANGUID)
-                    .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
+                            .waitForGreenStatus()
+                            .waitForEvents(Priority.LANGUID)
+                            .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
         }
         ClusterState state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
 
         final IndexMetadata metadata = state.getMetadata().index(tableName);
         final IndexMetadata.Builder brokenMeta = IndexMetadata.builder(metadata).settings(Settings.builder().put(metadata.getSettings())
-                .put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.minimumIndexCompatibilityVersion().internalId)
-                // this is invalid but should be archived
-                .put("index.similarity.BM25.type", "classic")
-                // this one is not validated ahead of time and breaks allocation
-                .put("index.analysis.filter.myCollator.type", "icu_collation")
-                .put("index.analysis.filter.myCollator.type", "icu_collation"));
+                                                                                              .put(IndexMetadata.SETTING_VERSION_CREATED, Version.CURRENT.minimumIndexCompatibilityVersion().internalId)
+                                                                                              // this is invalid but should be archived
+                                                                                              .put("index.similarity.BM25.type", "classic")
+                                                                                              // this one is not validated ahead of time and breaks allocation
+                                                                                              .put("index.analysis.filter.myCollator.type", "icu_collation")
+                                                                                              .put("index.analysis.filter.myCollator.type", "icu_collation"));
         restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(Metadata.builder(state.getMetadata()).put(brokenMeta)));
 
         // check that the cluster does not keep reallocating shards
@@ -441,7 +444,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
             for (IndexShardRoutingTable shardRoutingTable : indexRoutingTable) {
                 assertTrue(shardRoutingTable.primaryShard().unassigned());
                 assertEquals(UnassignedInfo.AllocationStatus.DECIDERS_NO,
-                    shardRoutingTable.primaryShard().unassignedInfo().getLastAllocationStatus());
+                             shardRoutingTable.primaryShard().unassignedInfo().getLastAllocationStatus());
                 assertThat(shardRoutingTable.primaryShard().unassignedInfo().getNumFailedAllocations(), greaterThan(0));
             }
         }, 60, TimeUnit.SECONDS);
@@ -472,18 +475,18 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         internalCluster().startNode();
         var tableName = getFqn("test");
         prepareCreate(tableName).setSettings(Settings.builder()
-            .put("index.analysis.analyzer.test.tokenizer", "standard")
-            .put("index.number_of_shards", "1"))
+                                                 .put("index.analysis.analyzer.test.tokenizer", "standard")
+                                                 .put("index.number_of_shards", "1"))
             .addMapping("default", "{\n" +
-                "    \"default\": {\n" +
-                "      \"properties\": {\n" +
-                "        \"field1\": {\n" +
-                "          \"type\": \"text\",\n" +
-                "          \"analyzer\": \"test\"\n" +
-                "        }\n" +
-                "      }\n" +
-                "    }\n" +
-                "  }}", XContentType.JSON).get();
+                                   "    \"default\": {\n" +
+                                   "      \"properties\": {\n" +
+                                   "        \"field1\": {\n" +
+                                   "          \"type\": \"text\",\n" +
+                                   "          \"analyzer\": \"test\"\n" +
+                                   "        }\n" +
+                                   "      }\n" +
+                                   "    }\n" +
+                                   "  }}", XContentType.JSON).get();
         logger.info("--> indexing a simple document");
         execute("insert into test (field1) values ('value one')");
         execute("refresh table test");
@@ -495,15 +498,15 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
             internalCluster().startNode();
             client().admin().cluster()
                 .health(Requests.clusterHealthRequest()
-                    .waitForGreenStatus()
-                    .waitForEvents(Priority.LANGUID)
-                    .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
+                            .waitForGreenStatus()
+                            .waitForEvents(Priority.LANGUID)
+                            .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
         }
         ClusterState state = client().admin().cluster().prepareState().get().getState();
 
         final IndexMetadata metadata = state.getMetadata().index(tableName);
         final IndexMetadata.Builder brokenMeta = IndexMetadata.builder(metadata).settings(metadata.getSettings()
-                .filter((s) -> "index.analysis.analyzer.test.tokenizer".equals(s) == false));
+                                                                                              .filter((s) -> "index.analysis.analyzer.test.tokenizer".equals(s) == false));
         restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(Metadata.builder(state.getMetadata()).put(brokenMeta)));
 
         // check that the cluster does not keep reallocating shards
@@ -515,7 +518,7 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
             for (IndexShardRoutingTable shardRoutingTable : indexRoutingTable) {
                 assertTrue(shardRoutingTable.primaryShard().unassigned());
                 assertEquals(UnassignedInfo.AllocationStatus.DECIDERS_NO,
-                    shardRoutingTable.primaryShard().unassignedInfo().getLastAllocationStatus());
+                             shardRoutingTable.primaryShard().unassignedInfo().getLastAllocationStatus());
                 assertThat(shardRoutingTable.primaryShard().unassignedInfo().getNumFailedAllocations(), greaterThan(0));
             }
         }, 60, TimeUnit.SECONDS);
@@ -546,23 +549,23 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
             internalCluster().startNode();
             client().admin().cluster()
                 .health(Requests.clusterHealthRequest()
-                    .waitForGreenStatus()
-                    .waitForEvents(Priority.LANGUID)
-                    .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
+                            .waitForGreenStatus()
+                            .waitForEvents(Priority.LANGUID)
+                            .waitForNoRelocatingShards(true).waitForNodes("2")).actionGet(REQUEST_TIMEOUT);
         }
         ClusterState state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
 
         final Metadata metadata = state.getMetadata();
         final Metadata brokenMeta = Metadata.builder(metadata).persistentSettings(Settings.builder()
-                .put(metadata.persistentSettings()).put("this.is.unknown", true)
-                .put(SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey(), "broken").build()).build();
+                                                                                      .put(metadata.persistentSettings()).put("this.is.unknown", true)
+                                                                                      .put(SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey(), "broken").build()).build();
         restartNodesOnBrokenClusterState(ClusterState.builder(state).metadata(brokenMeta));
 
         ensureYellow(tableName); // wait for state recovery
         state = client().admin().cluster().prepareState().execute().actionGet(REQUEST_TIMEOUT).getState();
         assertEquals("true", state.metadata().persistentSettings().get("archived.this.is.unknown"));
         assertEquals("broken", state.metadata().persistentSettings().get("archived."
-            + SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey()));
+                                                                         + SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey()));
 
         // delete these settings
         client().admin().cluster().prepareUpdateSettings().setPersistentSettings(Settings.builder().putNull("archived.*"))
@@ -571,9 +574,94 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
         state = client().admin().cluster().prepareState().get().getState();
         assertNull(state.metadata().persistentSettings().get("archived.this.is.unknown"));
         assertNull(state.metadata().persistentSettings().get("archived."
-            + SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey()));
+                                                             + SETTING_CLUSTER_MAX_SHARDS_PER_NODE.getKey()));
         execute("select id from test");
         assertThat(response.rowCount(), is(1L));
+    }
+
+    @TestLogging("org.elasticsearch.indices:DEBUG")
+    @Test
+    public void testOnlyWritesIndexMetadataFilesOnDataNodes() throws Exception {
+        final String masterNode = internalCluster().startMasterOnlyNode();
+        final String dataNode = internalCluster().startDataOnlyNode();
+        final String mixedNode = internalCluster().startNode();
+
+        execute("create table doc.test (id int) clustered into ? shards with (number_of_replicas = 1)", new Object[]{between(1, 3)});
+        ensureGreen("test");
+
+        final String indexUUID = resolveIndex("test").getUUID();
+
+        final Path[] masterPaths = internalCluster().getInstance(NodeEnvironment.class, masterNode).nodeDataPaths();
+        final Path[] dataPaths = internalCluster().getInstance(NodeEnvironment.class, dataNode).nodeDataPaths();
+        final Path[] mixedPaths = internalCluster().getInstance(NodeEnvironment.class, mixedNode).nodeDataPaths();
+
+        for (final Path path : masterPaths) {
+            assertFalse("master: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER)));
+        }
+        for (final Path path : dataPaths) {
+            assertTrue("data: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+        }
+        for (final Path path : mixedPaths) {
+            assertTrue("mixed: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+        }
+
+        logger.info("--> remove shards from data node, to check the index folder is cleaned up");
+
+        execute("alter table doc.test set (number_of_replicas = 0, \"routing.allocation.exclude._name\"=?)", new Object[]{dataNode} );
+
+        assertFalse(client().admin().cluster().prepareHealth("test").setWaitForGreenStatus()
+                        .setWaitForNoInitializingShards(true).setWaitForEvents(Priority.LANGUID).get().isTimedOut());
+
+        for (final Path path : masterPaths) {
+            assertFalse("master: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER)));
+        }
+        for (final Path path : mixedPaths) {
+            assertTrue("mixed: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+        }
+        assertBusy(() -> {
+            for (final Path path : dataPaths) {
+                assertFalse("data: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+            }
+        }, 60, TimeUnit.SECONDS);
+
+        logger.info("--> remove shards from mixed master/data node, to check the index folder is cleaned up");
+
+        execute("alter table doc.test set (\"routing.allocation.exclude._name\"=?)", new Object[]{mixedNode} );
+
+        assertFalse(client().admin().cluster().prepareHealth("test").setWaitForGreenStatus()
+                        .setWaitForNoInitializingShards(true).setWaitForEvents(Priority.LANGUID).get().isTimedOut());
+
+        for (final Path path : masterPaths) {
+            assertFalse("master: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER)));
+        }
+        for (final Path path : dataPaths) {
+            assertTrue("data: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+        }
+        assertBusy(() -> {
+            for (final Path path : mixedPaths) {
+                assertFalse("mixed: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+            }
+        });
+
+        logger.info("--> delete index and check the index folder is cleaned up on all nodes");
+
+        execute("alter table doc.test set (number_of_replicas = 1)");
+        execute ("alter table doc.test reset (\"routing.allocation.exclude._name\")");
+
+        ensureGreen("test");
+        execute("drop table doc.test");
+
+        for (final Path path : masterPaths) {
+            assertFalse("master: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER)));
+        }
+        assertBusy(() -> {
+            for (final Path path : dataPaths) {
+                assertFalse("data: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+            }
+            for (final Path path : mixedPaths) {
+                assertFalse("mixed: " + path, Files.exists(path.resolve(NodeEnvironment.INDICES_FOLDER).resolve(indexUUID)));
+            }
+        });
     }
 
     private void restartNodesOnBrokenClusterState(ClusterState.Builder clusterStateBuilder) throws Exception {
