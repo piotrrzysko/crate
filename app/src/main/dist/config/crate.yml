@@ -2,66 +2,125 @@
 # CrateDB configuration
 # =============================================================================
 
-# The default configuration offers the ability to use CrateDB right away. The
-# purpose of this file is to give operators an overview of the various
-# different configuration settings. To read the full documentation go to
-# <https://crate.io/docs/>
+# This file briefly summarizes the most important CrateDB configuration
+# settings.
+#
+# This file provides a stock configuration that allows you to start CrateDB
+# right away. Feel free to deviate from this configuration.
+#
+# You can modify any setting by uncommenting the setting and changing its
+# value. To uncomment a setting, remove the leading "# " characters.
+#
+# You can add more settings to this file by specifying a setting name and
+# configuring it as needed.
+#
+# For more information, consult the documentation:
+#
+#     <https://crate.io/docs/crate/reference/en/latest/config/>
+#
 
-# Use this file to fine-tune your CrateDB cluster. If you have any questions
-# you are welcome to contact us on Github
-# <https://github.com/crate/crate/discussions>.
 
-
-# Quick settings
+# Basic setup
 # =============================================================================
 
-# Recommended memory settings:
-# - set the environment variable CRATE_HEAP_SIZE to 25% of your memory
-#   (e.g. 16G, but not more than ~30G to benefit from CompressedOops).
-#   Depending on the OS update '/etc/default/crate' or '/etc/sysconfig/crate'
-#
-#   See https://crate.io/docs/crate/howtos/en/latest/performance/memory.html
-#   for more details.
-#
-# - disable swapping
-# bootstrap.memory_lock : true
+# This section can be used to configure basic setups.
 
-# Storage: CrateDB can utilize multiple volumes in parallel, make sure to set
-# the owner to 'crate:crate'
+
+# Memory
+
+# Recommended configuration:
+#
+# - Set the environment variable `CRATE_HEAP_SIZE` to 25% of your memory
+#   (e.g. 16G, but not more than ~30G to benefit from `CompressedOops`). See
+#   <https://crate.io/docs/crate/howtos/en/latest/performance/memory.html> for
+#   more details.
+#
+# - Disable swapping (via `memory_lock` below).
+
+# Disable swapping
+# bootstrap.memory_lock: true
+
+# See <https://crate.io/docs/crate/howtos/en/latest/performance/memory.html>
+# for more information.
+
+
+# Persistence
+
+# List of paths used for persistent data storage
 # path.data: /path/to/data1,/path/to/data2
 
-# Clustering: To avoid split-brain situations and data loss on recovery
-# gateway.expected_nodes: 5              # Total amount of nodes
-# gateway.recover_after_nodes: 3         # More than half of the nodes
+# CrateDB can utilize multiple volumes in parallel. Multiple paths must be
+# separated by commas (see example above).
+#
+# Make sure to set the ownership of configured data paths to `crate:crate` so
+# that CrateDB can write to them.
+#
+# See <https://crate.io/docs/crate/reference/en/latest/config/node.html#paths>
+# for more information.
 
-# Networking: Bind to an IP address or interface other than localhost.
-# Be careful! Never expose an unprotected node to the internet.
-# Choose from [IP Address], _local_, _site_, _global_ or _[networkInterface]_
+
+# Networking
+
+# Bind to an IP address or some network interface
 # network.host: _site_
 
-# Cluster discovery: Specify the hosts which will form the CrateDB cluster
+# Options for `network.host`:
+#
+#     - [IP ADDRESS]
+#     - _local_
+#     - _site_
+#     - _global_
+#     - _[INTERFACE]_
+#
+# See <https://crate.io/docs/crate/reference/en/4.5/config/node.html#hosts> for
+# more information.
+#
+# WANRING: Never expose an unprotected node to the internet.
+
+
+# Clustering
+
+# Total amount of nodes
+# gateway.expected_nodes: 5
+#
+# Minimum nodes necessary for recovery (should be more than half of the nodes)
+# gateway.recover_after_nodes: 3
+
+# When configuring clustering, be careful to choose values that prevent
+# split-brain scenarios and data loss on recovery. See
+# <https://crate.io/docs/crate/reference/en/latest/concepts/clustering.html>
+# for more details.
+
+# The hosts that will initially form the cluster
 # discovery.seed_hosts:
 #     - host1
 #     - host2
 
-# Bootstrap the cluster using an initial set of master-eligible nodes. All
-# master-eligible nodes must be set here for new (or upgraded from CrateDB <
-# 4.x) production (non loop-back bound) clusters otherwise the cluster is not
-# able to initially vote an initial master node:
-#
+# The initial set of master-eligible nodes
 # cluster.initial_master_nodes:
 #     - host1
 #     - host2
 
+# For production clusters (i.e. not bound to the loopback address), all
+# master-eligible nodes must be listed for `initial_master_nodes` (CrateDB
+# versions 4.0 and higher). If this is not done, the cluster will not be able
+# to vote for an initial master node.
+#
+# See <https://crate.io/docs/crate/reference/en/latest/config/cluster.html> for
+# more information about clustering settings.
+#
+# For clustering how-to guides, see
+# <https://crate.io/docs/crate/howtos/en/latest/clustering/> for more
+# information.
 
-# Full settings
+
+# Advanced settings
 # =============================================================================
 
-# The quick settings above should be sufficient for most situations. However,
-# below are listed all available configuration options.
+# This section can be used to configure more advanced setups.
 
-# Any element in the configuration can be replaced with environment variables
-# by placing them in ${...} notation. For example:
+# NOTE: Environment variables can be used in this file as configuration values
+# using the `${VARIABLE_NAME}` notation. For example:
 #
 # node.attr.rack: ${RACK_ENV_VAR}
 
@@ -74,22 +133,16 @@
 # stats.enabled: true
 
 
-# Database administration
+# Authentication
 # -----------------------------------------------------------------------------
 
-# To allow authenticated access to CrateDB from specific hosts, you must enable
-# the host based authentication setting.
-# The default value is `false`.
+# Host-based access
+
+# Allow authenticated access from specific named hosts (default value: `false`)
 auth.host_based.enabled: true
 
-# Client access and authentication is then configured via the host based
-# config, a map of remote client access entries.
-# The following example is a sane configuration that covers a common use case:
-# * The predefined superuser `crate` has trusted access from localhost.
-# * All other users require username/password authentication from anywhere.
-#   Note that this authentication method is only available via Postgres
-#   Protocol, meaning that with this configuration, connecting from non-local
-#   hosts via HTTP would not be possible!
+# Host-based access is configured with a config map specifying users,
+# addresses, and authentication methods.
 auth:
   host_based:
     config:
@@ -99,6 +152,21 @@ auth:
         method: trust
       99:
         method: password
+
+# The stock configuration (above) works for a common use case:
+#
+# - The superuser (`crate`) has trusted access from `localhost` (here specified
+#   by the named interface `_local`).
+#
+# - All other users require a username and password combination to authenticate
+#   from anywhere (no configured `address` effectively allows all addresses).
+#
+# NOTE: Host-based authentication is only possible via the PostgreSQL wire
+# protocol. Using the stock configuration, it is not possible to connect from
+# any address except `localhost`.
+
+
+# Trust-based authentication
 
 # When trust based authentication is used, the server just takes the username
 # provided by the client as is without further validation. The HTTP
