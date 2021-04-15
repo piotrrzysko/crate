@@ -10,6 +10,24 @@ Run the all of `doctests`_::
 
     $ ./gradlew itest
 
+For running itest on Windows WSL needs to be installed. If downloaded Linux distro comes without Java, install it by running the following commands::
+
+    $ sudo add-apt-repository ppa:openjdk-r/ppa
+    $ sudo apt-get update
+    $ sudo apt install openjdk-11-jdk.
+
+Then install python virtual environment by running::
+
+    $ sudo apt-get install python3-venv
+
+To support symlinks, enable Developer Mode and run::
+
+    $ git config --global core.symlinks true
+
+After all configuration is done, launch WSL from the project directory and run::
+
+    $ ./gradlew itest
+
 Run the doctests for a specific file (e.g., ``filename.rst``):
 
     $ ITEST_FILE_NAME_FILTER=filename.rst ./gradlew itest
@@ -46,3 +64,5 @@ test method to enable more detailed logging. For example::
     @TestLogging("io.crate:DEBUG,io.crate.planner.consumer.NestedLoopConsumer:TRACE")
 
 .. _doctests: https://github.com/crate/crate/blob/master/blackbox/test_docs.py
+.. _WSL needs to be installed: https://www.howtogeek.com/249966/how-to-install-and-use-the-linux-bash-shell-on-windows-10/
+.. _enable Developer Mode: https://www.howtogeek.com/292914/what-is-developer-mode-in-windows-10/
