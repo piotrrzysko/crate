@@ -50,11 +50,13 @@ import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import javax.net.ssl.SNIHostName;
 
+import io.crate.common.collections.Tuple;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.util.Constants;
 import org.apache.lucene.util.SetOnce;
+import org.elasticsearch.Assertions;
 import org.elasticsearch.Build;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchTimeoutException;
@@ -76,6 +78,7 @@ import org.elasticsearch.cluster.action.index.MappingUpdatedAction;
 import org.elasticsearch.cluster.metadata.AliasValidator;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.IndexTemplateMetadata;
+import org.elasticsearch.cluster.metadata.Manifest;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService;
 import org.elasticsearch.cluster.metadata.MetadataIndexUpgradeService;
@@ -388,7 +391,17 @@ public class Node implements Closeable {
                 .flatMap(Function.identity()).collect(toList()));
             final MetaStateService metaStateService = new MetaStateService(nodeEnvironment, xContentRegistry);
             final LucenePersistedStateFactory lucenePersistedStateFactory
-                = new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, bigArrays);
+                = new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, bigArrays, new LucenePersistedStateFactory.LegacyLoader() {
+                @Override
+                public Tuple<Manifest, Metadata> loadClusterState() throws IOException {
+                    return metaStateService.loadFullState();
+                }
+
+                @Override
+                public void clean() throws IOException {
+                    metaStateService.deleteAll();
+                }
+            });
 
             // collect engine factory providers from server and from plugins
             final Collection<EnginePlugin> enginePlugins = pluginsService.filterPlugins(EnginePlugin.class);
@@ -710,11 +723,17 @@ public class Node implements Closeable {
             settings(),
             transportService,
             clusterService,
-            injector.getInstance(MetaStateService.class),
             injector.getInstance(MetadataIndexUpgradeService.class),
             injector.getInstance(MetadataUpgrader.class),
             injector.getInstance(LucenePersistedStateFactory.class)
         );
+        if (Assertions.ENABLED) {
+            try {
+                assert injector.getInstance(MetaStateService.class).loadFullState().v1().isEmpty();
+            } catch (IOException e) {
+                assert false : e;
+            }
+        }
         // we load the global state here (the persistent part of the cluster state stored on disk) to
         // pass it to the bootstrap checks to allow plugins to enforce certain preconditions based on the recovered state.
         final Metadata onDiskMetadata = gatewayMetaState.getPersistedState().getLastAcceptedState().metadata();

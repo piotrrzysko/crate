@@ -34,14 +34,11 @@ import org.elasticsearch.test.InternalTestCluster;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
-import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
-import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
-import static org.hamcrest.Matchers.equalTo;
 
 @ClusterScope(scope = Scope.TEST, numDataNodes = 0)
 public class MetadataWriteDataNodesIT extends SQLTransportIntegrationTest {
+
     public void testMetaWrittenAlsoOnDataNode() throws Exception {
         // this test checks that index state is written on data only nodes if they have a shard allocated
         String masterNode = internalCluster().startMasterOnlyNode(Settings.EMPTY);
@@ -53,6 +50,37 @@ public class MetadataWriteDataNodesIT extends SQLTransportIntegrationTest {
         assertIndexInMetaState(masterNode, "test");
     }
 
+    public void testIndexFilesAreRemovedIfAllShardsFromIndexRemoved() throws Exception {
+        // this test checks that the index data is removed from a data only node once all shards have been allocated away from it
+        String masterNode = internalCluster().startMasterOnlyNode(Settings.EMPTY);
+        List<String> nodeNames= internalCluster().startDataOnlyNodes(2);
+        String node1 = nodeNames.get(0);
+        String node2 = nodeNames.get(1);
+
+        execute("create table doc.test(x int) with (number_of_replicas = 0, \"routing.allocation.include._name\" = ?)", new Object[]{node1});
+        execute("insert into doc.test values(1)");
+        ensureGreen();
+        assertIndexInMetaState(node1, "test");
+        Index resolveIndex = resolveIndex("test");
+        assertIndexDirectoryExists(node1, resolveIndex);
+        assertIndexDirectoryDeleted(node2, resolveIndex);
+        assertIndexInMetaState(masterNode, "test");
+        assertIndexDirectoryDeleted(masterNode, resolveIndex);
+
+        logger.debug("relocating index...");
+        execute("alter table doc.test set(\"routing.allocation.include._name\" = ?)", new Object[] {node2});
+        client().admin().cluster().prepareHealth().setWaitForNoRelocatingShards(true).get();
+        ensureGreen();
+        assertIndexDirectoryDeleted(node1, resolveIndex);
+        assertIndexInMetaState(node2, "test");
+        assertIndexDirectoryExists(node2, resolveIndex);
+        assertIndexInMetaState(masterNode, "test");
+        assertIndexDirectoryDeleted(masterNode, resolveIndex);
+
+        client().admin().indices().prepareDelete("test").get();
+        assertIndexDirectoryDeleted(node1, resolveIndex);
+        assertIndexDirectoryDeleted(node2, resolveIndex);
+    }
 
     protected void assertIndexDirectoryDeleted(final String nodeName, final Index index) throws Exception {
         assertBusy(() -> {
@@ -60,6 +88,12 @@ public class MetadataWriteDataNodesIT extends SQLTransportIntegrationTest {
                        assertFalse("Expecting index directory of " + index + " to be deleted from node " + nodeName,
                                    indexDirectoryExists(nodeName, index));
                    }
+        );
+    }
+
+    protected void assertIndexDirectoryExists(final String nodeName, final Index index) throws Exception {
+        assertBusy(() -> assertTrue("Expecting index directory of " + index + " to exist on node " + nodeName,
+                                    indexDirectoryExists(nodeName, index))
         );
     }
 
@@ -80,7 +114,8 @@ public class MetadataWriteDataNodesIT extends SQLTransportIntegrationTest {
 
     private boolean indexDirectoryExists(String nodeName, Index index) {
         NodeEnvironment nodeEnv = ((InternalTestCluster) cluster()).getInstance(NodeEnvironment.class, nodeName);
-        for (Path path : nodeEnv.indexPaths(index)) {
+        Path[] paths = nodeEnv.indexPaths(index);
+        for (Path path : paths) {
             if (Files.exists(path)) {
                 return true;
             }

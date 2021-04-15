@@ -19,6 +19,7 @@
 package org.elasticsearch.gateway;
 
 import com.carrotsearch.hppc.cursors.ObjectCursor;
+import io.crate.common.collections.Tuple;
 import io.crate.common.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -51,6 +52,7 @@ import org.elasticsearch.Version;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.coordination.CoordinationState;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
+import org.elasticsearch.cluster.metadata.Manifest;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.common.CheckedConsumer;
 import org.elasticsearch.common.io.stream.ReleasableBytesStreamOutput;
@@ -125,11 +127,43 @@ public class LucenePersistedStateFactory {
     private final NodeEnvironment nodeEnvironment;
     private final NamedXContentRegistry namedXContentRegistry;
     private final BigArrays bigArrays;
+    private final LegacyLoader legacyLoader;
 
-    public LucenePersistedStateFactory(NodeEnvironment nodeEnvironment, NamedXContentRegistry namedXContentRegistry, BigArrays bigArrays) {
+    /**
+     * Allows interacting with legacy metadata
+     */
+    public interface LegacyLoader {
+        /**
+         * Loads legacy state
+         */
+        Tuple<Manifest, Metadata> loadClusterState() throws IOException;
+
+        /**
+         * Cleans legacy state
+         */
+        void clean() throws IOException;
+    }
+
+    LucenePersistedStateFactory(NodeEnvironment nodeEnvironment, NamedXContentRegistry namedXContentRegistry, BigArrays bigArrays) {
+        this(nodeEnvironment, namedXContentRegistry, bigArrays, new LegacyLoader() {
+            @Override
+            public Tuple<Manifest, Metadata> loadClusterState() {
+                return new Tuple<>(Manifest.empty(), Metadata.EMPTY_METADATA);
+            }
+
+            @Override
+            public void clean() {
+
+            }
+        });
+    }
+
+    public LucenePersistedStateFactory(NodeEnvironment nodeEnvironment, NamedXContentRegistry namedXContentRegistry, BigArrays bigArrays,
+                                       LegacyLoader legacyLoader) {
         this.nodeEnvironment = nodeEnvironment;
         this.namedXContentRegistry = namedXContentRegistry;
         this.bigArrays = bigArrays;
+        this.legacyLoader = legacyLoader;
     }
 
     CoordinationState.PersistedState loadPersistedState(BiFunction<Long, Metadata, ClusterState> clusterStateFromMetadata)
@@ -172,6 +206,7 @@ public class LucenePersistedStateFactory {
         success = false;
         try {
             lucenePersistedState.persistInitialState();
+            legacyLoader.clean();
             success = true;
             return lucenePersistedState;
         } finally {
@@ -205,10 +240,12 @@ public class LucenePersistedStateFactory {
         }
     }
 
+    private static final OnDiskState NO_ON_DISK_STATE = new OnDiskState(null, null, 0L, 0L, Metadata.EMPTY_METADATA);
+
     private OnDiskState loadBestOnDiskState() throws IOException {
         String committedClusterUuid = null;
         Path committedClusterUuidPath = null;
-        OnDiskState bestOnDiskState = new OnDiskState(null, null, 0L, 0L, Metadata.EMPTY_METADATA);
+        OnDiskState bestOnDiskState = NO_ON_DISK_STATE;
         OnDiskState maxCurrentTermOnDiskState = bestOnDiskState;
 
         // We use a write-all-read-one strategy: metadata is written to every data path when accepting it, which means it is mostly
@@ -243,7 +280,8 @@ public class LucenePersistedStateFactory {
 
                     long acceptedTerm = onDiskState.metadata.coordinationMetadata().term();
                     long maxAcceptedTerm = bestOnDiskState.metadata.coordinationMetadata().term();
-                    if (acceptedTerm > maxAcceptedTerm
+                    if (bestOnDiskState == NO_ON_DISK_STATE
+                        || acceptedTerm > maxAcceptedTerm
                         || (acceptedTerm == maxAcceptedTerm
                             && (onDiskState.lastAcceptedVersion > bestOnDiskState.lastAcceptedVersion
                                 || (onDiskState.lastAcceptedVersion == bestOnDiskState.lastAcceptedVersion)
@@ -260,6 +298,15 @@ public class LucenePersistedStateFactory {
             throw new IllegalStateException("inconsistent terms found: best state is from [" + bestOnDiskState.dataPath +
                                             "] in term [" + bestOnDiskState.currentTerm + "] but there is a stale state in [" + maxCurrentTermOnDiskState.dataPath +
                                             "] with greater term [" + maxCurrentTermOnDiskState.currentTerm + "]");
+        }
+
+        if (bestOnDiskState == NO_ON_DISK_STATE) {
+            assert Version.CURRENT.major <= Version.V_4_6_0.major + 1 : "legacy metadata loader is not needed anymore from v9 onwards";
+            final Tuple<Manifest, Metadata> legacyState = legacyLoader.loadClusterState();
+            if (legacyState.v1().isEmpty() == false) {
+                return new OnDiskState(nodeEnvironment.nodeId(), null, legacyState.v1().getCurrentTerm(),
+                                       legacyState.v1().getClusterStateVersion(), legacyState.v2());
+            }
         }
 
         return bestOnDiskState;

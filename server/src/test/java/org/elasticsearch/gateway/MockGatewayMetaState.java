@@ -41,8 +41,6 @@ import static org.mockito.Mockito.when;
  * It's not always easy / convenient to construct these dependencies.
  * This class constructor takes far fewer dependencies and constructs usable {@link GatewayMetaState} with 2 restrictions:
  * no metadata upgrade will be performed and no cluster state updaters will be run. This is sufficient for most of the tests.
- * Metadata upgrade is tested in {@link  GatewayMetaStateTests} and different {@link ClusterStateUpdaters} in
- * {@link ClusterStateUpdatersTests}.
  */
 public class MockGatewayMetaState extends GatewayMetaState {
     private final DiscoveryNode localNode;
@@ -52,14 +50,8 @@ public class MockGatewayMetaState extends GatewayMetaState {
     }
 
     @Override
-    void upgradeMetadata(Settings settings, MetaStateService metaStateService, MetadataIndexUpgradeService metadataIndexUpgradeService,
-                         MetadataUpgrader metadataUpgrader) {
-        // Metadata upgrade is tested in GatewayMetaStateTests, we override this method to NOP to make mocking easier
-    }
-
-    @Override
-    Metadata upgradeMetadataForMasterEligibleNode(Metadata metadata, MetadataIndexUpgradeService metadataIndexUpgradeService,
-                                                  MetadataUpgrader metadataUpgrader) {
+    Metadata upgradeMetadataForNode(Metadata metadata, MetadataIndexUpgradeService metadataIndexUpgradeService,
+                                    MetadataUpgrader metadataUpgrader) {
         // Metadata upgrade is tested in GatewayMetaStateTests, we override this method to NOP to make mocking easier
         return metadata;
     }
@@ -76,7 +68,7 @@ public class MockGatewayMetaState extends GatewayMetaState {
         final ClusterService clusterService = mock(ClusterService.class);
         when(clusterService.getClusterSettings())
             .thenReturn(new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS));
-        start(settings, transportService, clusterService, new MetaStateService(nodeEnvironment, xContentRegistry),
-            null, null,  new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, BigArrays.NON_RECYCLING_INSTANCE));
+        start(settings, transportService, clusterService,
+              null, null, new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, BigArrays.NON_RECYCLING_INSTANCE));
     }
 }

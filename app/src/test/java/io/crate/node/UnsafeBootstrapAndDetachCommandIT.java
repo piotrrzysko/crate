@@ -25,6 +25,7 @@ package io.crate.node;
 import io.crate.integrationtests.SQLTransportIntegrationTest;
 import io.crate.testing.UseJdbc;
 import joptsimple.OptionSet;
+import org.apache.lucene.util.LuceneTestCase;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.cli.MockTerminal;
 import org.elasticsearch.cluster.ClusterState;
@@ -48,6 +49,7 @@ import java.util.Locale;
 
 import static org.hamcrest.Matchers.containsString;
 
+@LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/elastic/elasticsearch/issues/48701") 
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numClientNodes = 0, numDataNodes = 0, autoManageMasterNodes = false)
 public class UnsafeBootstrapAndDetachCommandIT extends SQLTransportIntegrationTest {
 
