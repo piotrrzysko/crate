@@ -88,6 +88,7 @@ public class MetadataIndexUpgradeService {
         // Throws an exception if there are too-old segments:
         if (isUpgraded(indexMetadata)) {
             return indexMetadata;
+
         }
         checkSupportedVersion(indexMetadata, minimumIndexCompatibilityVersion);
         IndexMetadata newMetadata = indexMetadata;

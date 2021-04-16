@@ -19,7 +19,9 @@
 
 package org.elasticsearch.gateway;
 
+import io.crate.common.collections.Tuple;
 import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.metadata.Manifest;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.metadata.MetadataIndexUpgradeService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -32,6 +34,8 @@ import org.elasticsearch.env.NodeEnvironment;
 import org.elasticsearch.plugins.MetadataUpgrader;
 import org.elasticsearch.threadpool.ThreadPool;
 import org.elasticsearch.transport.TransportService;
+
+import java.io.IOException;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -68,7 +72,13 @@ public class MockGatewayMetaState extends GatewayMetaState {
         final ClusterService clusterService = mock(ClusterService.class);
         when(clusterService.getClusterSettings())
             .thenReturn(new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS));
-        start(settings, transportService, clusterService,
-              null, null, new LucenePersistedStateFactory(nodeEnvironment, xContentRegistry, BigArrays.NON_RECYCLING_INSTANCE));
+        final MetaStateService metaStateService = mock(MetaStateService.class);
+        try {
+            when(metaStateService.loadFullState()).thenReturn(new Tuple<>(Manifest.empty(), Metadata.builder().build()));
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        start(settings, transportService, clusterService, metaStateService,
+              null, null, new PersistedClusterStateService(nodeEnvironment, xContentRegistry, BigArrays.NON_RECYCLING_INSTANCE));
     }
 }

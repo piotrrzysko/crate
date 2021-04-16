@@ -339,7 +339,13 @@ public final class NodeEnvironment implements Closeable {
      * @return the resolved path
      */
     public static Path resolveNodePath(final Path path, final int nodeLockId) {
-        return path.resolve(NODES_FOLDER).resolve(Integer.toString(nodeLockId));
+        //TODO if the path is already prefixed, do not prefix it again
+        var id = Integer.toString(nodeLockId);
+        if (path.toString().endsWith(NODES_FOLDER + "/" + id)) {
+            return path;
+        } else {
+            return path.resolve(NODES_FOLDER).resolve(id);
+        }
     }
 
     private void maybeLogPathDetails() throws IOException {

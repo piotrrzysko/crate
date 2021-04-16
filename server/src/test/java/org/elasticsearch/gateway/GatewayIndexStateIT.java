@@ -52,13 +52,10 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.elasticsearch.test.ESIntegTestCase.ClusterScope;
 import org.elasticsearch.test.ESIntegTestCase.Scope;
 import org.elasticsearch.test.InternalTestCluster.RestartCallback;
-import org.elasticsearch.test.junit.annotations.TestLogging;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -580,17 +577,18 @@ public class GatewayIndexStateIT extends SQLTransportIntegrationTest {
     }
 
     private void restartNodesOnBrokenClusterState(ClusterState.Builder clusterStateBuilder) throws Exception {
-        Map<String, LucenePersistedStateFactory> lucenePersistedStateFactories = Stream.of(internalCluster().getNodeNames())
+        Map<String, PersistedClusterStateService> lucenePersistedStateFactories = Stream.of(internalCluster().getNodeNames())
             .collect(Collectors.toMap(Function.identity(),
-                                      nodeName -> internalCluster().getInstance(LucenePersistedStateFactory.class, nodeName)));
+                                      nodeName -> internalCluster().getInstance(PersistedClusterStateService.class,
+                                                                                nodeName)));
         final ClusterState clusterState = clusterStateBuilder.build();
-        internalCluster().fullRestart(new RestartCallback(){
+        internalCluster().fullRestart(new RestartCallback() {
             @Override
             public Settings onNodeStopped(String nodeName) throws Exception {
-                final LucenePersistedStateFactory lucenePersistedStateFactory = lucenePersistedStateFactories.get(nodeName);
-                try (CoordinationState.PersistedState persistedState = lucenePersistedStateFactory.loadPersistedState(
-                    (v, m) -> ClusterState.builder(ClusterName.DEFAULT).version(v).metadata(m).build())) {
-                    persistedState.setLastAcceptedState(clusterState);
+                final PersistedClusterStateService lucenePersistedStateFactory = lucenePersistedStateFactories.get(
+                    nodeName);
+                try (PersistedClusterStateService.Writer writer = lucenePersistedStateFactory.createWriter()) {
+                    writer.writeFullStateAndCommit(clusterState.term(), clusterState);
                 }
                 return super.onNodeStopped(nodeName);
             }

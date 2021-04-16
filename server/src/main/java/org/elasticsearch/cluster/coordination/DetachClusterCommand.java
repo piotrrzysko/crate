@@ -16,14 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.elasticsearch.cluster.coordination;
 
+import joptsimple.OptionSet;
 import org.elasticsearch.cli.Terminal;
-import org.elasticsearch.cluster.metadata.Manifest;
+import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.Metadata;
-import io.crate.common.collections.Tuple;
 import org.elasticsearch.env.Environment;
+import org.elasticsearch.gateway.PersistedClusterStateService;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -49,14 +49,21 @@ public class DetachClusterCommand extends ElasticsearchNodeCommand {
 
 
     @Override
-    protected void processNodePaths(Terminal terminal, Path[] dataPaths, Environment env) throws IOException {
-        final Tuple<Manifest, Metadata> manifestMetadataTuple = loadMetadata(terminal, dataPaths);
-        final Manifest manifest = manifestMetadataTuple.v1();
-        final Metadata metadata = manifestMetadataTuple.v2();
+    protected void processNodePaths(Terminal terminal, Path[] dataPaths, OptionSet options, Environment env) throws IOException {
+        final PersistedClusterStateService persistedClusterStateService = createPersistedClusterStateService(dataPaths);
+
+        terminal.println(Terminal.Verbosity.VERBOSE, "Loading cluster state");
+        final ClusterState oldClusterState = loadTermAndClusterState(persistedClusterStateService, env).v2();
+        final ClusterState newClusterState = ClusterState.builder(oldClusterState)
+            .metadata(updateMetadata(oldClusterState.metadata())).build();
+        terminal.println(Terminal.Verbosity.VERBOSE,
+                         "[old cluster state = " + oldClusterState + ", new cluster state = " + newClusterState + "]");
 
         confirm(terminal, CONFIRMATION_MSG);
 
-        writeNewMetadata(terminal, manifest, updateCurrentTerm(), metadata, updateMetadata(metadata), dataPaths);
+        try (PersistedClusterStateService.Writer writer = persistedClusterStateService.createWriter()) {
+            writer.writeFullStateAndCommit(updateCurrentTerm(), newClusterState);
+        }
 
         terminal.println(NODE_DETACHED_MSG);
     }
@@ -64,18 +71,17 @@ public class DetachClusterCommand extends ElasticsearchNodeCommand {
     // package-private for tests
     static Metadata updateMetadata(Metadata oldMetadata) {
         final CoordinationMetadata coordinationMetadata = CoordinationMetadata.builder()
-                .lastAcceptedConfiguration(CoordinationMetadata.VotingConfiguration.MUST_JOIN_ELECTED_MASTER)
-                .lastCommittedConfiguration(CoordinationMetadata.VotingConfiguration.MUST_JOIN_ELECTED_MASTER)
-                .term(0)
-                .build();
+            .lastAcceptedConfiguration(CoordinationMetadata.VotingConfiguration.MUST_JOIN_ELECTED_MASTER)
+            .lastCommittedConfiguration(CoordinationMetadata.VotingConfiguration.MUST_JOIN_ELECTED_MASTER)
+            .term(0)
+            .build();
         return Metadata.builder(oldMetadata)
-                .coordinationMetadata(coordinationMetadata)
-                .clusterUUIDCommitted(false)
-                .build();
+            .coordinationMetadata(coordinationMetadata)
+            .clusterUUIDCommitted(false)
+            .build();
     }
 
-    //package-private for tests
-    static long updateCurrentTerm() {
+    public static long updateCurrentTerm() {
         return 0;
     }
 }

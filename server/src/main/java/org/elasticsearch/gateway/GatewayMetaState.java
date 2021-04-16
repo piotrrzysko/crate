@@ -20,6 +20,7 @@
 package org.elasticsearch.gateway;
 
 import com.carrotsearch.hppc.cursors.ObjectObjectCursor;
+import io.crate.common.collections.Tuple;
 import io.crate.common.io.IOUtils;
 import org.apache.lucene.util.SetOnce;
 import org.elasticsearch.ElasticsearchException;
@@ -29,6 +30,8 @@ import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.coordination.CoordinationState.PersistedState;
 import org.elasticsearch.cluster.coordination.InMemoryPersistedState;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
+import org.elasticsearch.cluster.metadata.IndexTemplateMetadata;
+import org.elasticsearch.cluster.metadata.Manifest;
 import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.metadata.MetadataIndexUpgradeService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
@@ -40,6 +43,7 @@ import org.elasticsearch.transport.TransportService;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -71,19 +75,49 @@ public class GatewayMetaState implements Closeable {
     }
 
     public void start(Settings settings, TransportService transportService, ClusterService clusterService,
-                      MetadataIndexUpgradeService metadataIndexUpgradeService,
-                      MetadataUpgrader metadataUpgrader, LucenePersistedStateFactory lucenePersistedStateFactory) {
+                      MetaStateService metaStateService, MetadataIndexUpgradeService metadataIndexUpgradeService,
+                      MetadataUpgrader metadataUpgrader, PersistedClusterStateService persistedClusterStateService) {
         assert persistedState.get() == null : "should only start once, but already have " + persistedState.get();
 
         if (DiscoveryNode.isMasterNode(settings) || DiscoveryNode.isDataNode(settings)) {
             try {
-                persistedState.set(lucenePersistedStateFactory.loadPersistedState((version, metadata) ->
-                                                                                      prepareInitialClusterState(transportService, clusterService,
-                                                                                                                 ClusterState.builder(ClusterName.CLUSTER_NAME_SETTING.get(settings))
-                                                                                                                     .version(version)
-                                                                                                                     .metadata(upgradeMetadataForNode(metadata, metadataIndexUpgradeService, metadataUpgrader))
-                                                                                                                     .build()))
-                );
+                final PersistedClusterStateService.OnDiskState onDiskState = persistedClusterStateService.loadBestOnDiskState();
+
+                Metadata metadata = onDiskState.metadata;
+                long lastAcceptedVersion = onDiskState.lastAcceptedVersion;
+                long currentTerm = onDiskState.currentTerm;
+
+                if (onDiskState.empty()) {
+                    assert Version.CURRENT.major <= Version.V_4_6_0.major + 1 :
+                        "legacy metadata loader is not needed anymore from v9 onwards";
+                    final Tuple<Manifest, Metadata> legacyState = metaStateService.loadFullState();
+                    if (legacyState.v1().isEmpty() == false) {
+                        metadata = legacyState.v2();
+                        lastAcceptedVersion = legacyState.v1().getClusterStateVersion();
+                        currentTerm = legacyState.v1().getCurrentTerm();
+                    }
+                }
+
+                final PersistedClusterStateService.Writer persistenceWriter = persistedClusterStateService.createWriter();
+                final LucenePersistedState lucenePersistedState;
+                boolean success = false;
+                try {
+                    final ClusterState clusterState = prepareInitialClusterState(transportService, clusterService,
+                                                                                 ClusterState.builder(ClusterName.CLUSTER_NAME_SETTING.get(settings))
+                                                                                     .version(lastAcceptedVersion)
+                                                                                     .metadata(upgradeMetadataForNode(metadata, metadataIndexUpgradeService, metadataUpgrader))
+                                                                                     .build());
+                    lucenePersistedState = new LucenePersistedState(
+                        persistenceWriter, currentTerm, clusterState);
+                    metaStateService.deleteAll(); // delete legacy files
+                    success = true;
+                } finally {
+                    if (success == false) {
+                        IOUtils.closeWhileHandlingException(persistenceWriter);
+                    }
+                }
+
+                persistedState.set(lucenePersistedState);
             } catch (IOException e) {
                 throw new ElasticsearchException("failed to load metadata", e);
             }
@@ -127,7 +161,7 @@ public class GatewayMetaState implements Closeable {
         final Metadata.Builder upgradedMetadata = Metadata.builder(metadata);
         for (IndexMetadata indexMetadata : metadata) {
             IndexMetadata newMetadata = metadataIndexUpgradeService.upgradeIndexMetadata(indexMetadata,
-                    Version.CURRENT.minimumIndexCompatibilityVersion());
+                Version.CURRENT.minimumIndexCompatibilityVersion());
             changed |= indexMetadata != newMetadata;
             upgradedMetadata.put(newMetadata, false);
         }
@@ -147,9 +181,9 @@ public class GatewayMetaState implements Closeable {
     }
 
     private static <Data> boolean applyPluginUpgraders(ImmutableOpenMap<String, Data> existingData,
-                                                UnaryOperator<Map<String, Data>> upgrader,
-                                                Consumer<String> removeData,
-                                                BiConsumer<String, Data> putData) {
+                                                       UnaryOperator<Map<String, Data>> upgrader,
+                                                       Consumer<String> removeData,
+                                                       BiConsumer<String, Data> putData) {
         // collect current data
         Map<String, Data> existingMap = new HashMap<>();
         for (ObjectObjectCursor<String, Data> customCursor : existingData) {
@@ -173,4 +207,68 @@ public class GatewayMetaState implements Closeable {
         IOUtils.close(persistedState.get());
     }
 
+    /**
+     * Encapsulates the incremental writing of metadata to a {@link PersistedClusterStateService.Writer}.
+     */
+    static class LucenePersistedState implements PersistedState {
+
+        private long currentTerm;
+        private ClusterState lastAcceptedState;
+        private final PersistedClusterStateService.Writer persistenceWriter;
+
+        LucenePersistedState(PersistedClusterStateService.Writer persistenceWriter, long currentTerm, ClusterState lastAcceptedState)
+            throws IOException {
+            this.persistenceWriter = persistenceWriter;
+            this.currentTerm = currentTerm;
+            this.lastAcceptedState = lastAcceptedState;
+            // Write the whole state out to be sure it's fresh and using the latest format. Called during initialisation, so that
+            // (1) throwing an IOException is enough to halt the node, and
+            // (2) the index is currently empty since it was opened with IndexWriterConfig.OpenMode.CREATE
+
+            // In the common case it's actually sufficient to commit() the existing state and not do any indexing. For instance,
+            // this is true if there's only one data path on this master node, and the commit we just loaded was already written out
+            // by this version of Elasticsearch. TODO TBD should we avoid indexing when possible?
+            persistenceWriter.writeFullStateAndCommit(currentTerm, lastAcceptedState);
+        }
+
+        @Override
+        public long getCurrentTerm() {
+            return currentTerm;
+        }
+
+        @Override
+        public ClusterState getLastAcceptedState() {
+            return lastAcceptedState;
+        }
+
+        @Override
+        public void setCurrentTerm(long currentTerm) {
+            persistenceWriter.commit(currentTerm, lastAcceptedState.version());
+            this.currentTerm = currentTerm;
+        }
+
+        @Override
+        public void setLastAcceptedState(ClusterState clusterState) {
+            try {
+                if (clusterState.term() != lastAcceptedState.term()) {
+                    assert clusterState.term() > lastAcceptedState.term() : clusterState.term() + " vs " + lastAcceptedState.term();
+                    // In a new currentTerm, we cannot compare the persisted metadata's lastAcceptedVersion to those in the new state, so
+                    // it's simplest to write everything again.
+                    persistenceWriter.writeFullStateAndCommit(currentTerm, clusterState);
+                } else {
+                    // Within the same currentTerm, we _can_ use metadata versions to skip unnecessary writing.
+                    persistenceWriter.writeIncrementalStateAndCommit(currentTerm, lastAcceptedState, clusterState);
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+            lastAcceptedState = clusterState;
+        }
+
+        @Override
+        public void close() throws IOException {
+            persistenceWriter.close();
+        }
+    }
 }
