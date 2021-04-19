@@ -2,47 +2,35 @@
 # CrateDB configuration
 # =============================================================================
 
-# This file briefly summarizes the most important CrateDB configuration
-# settings.
-#
-# This file provides a stock configuration that allows you to start CrateDB
-# right away. Feel free to deviate from this configuration.
-#
-# You can modify any setting by uncommenting the setting and changing its
-# value. To uncomment a setting, remove the leading "# " characters.
-#
-# You can add more settings to this file by specifying a setting name and
-# configuring it as needed.
-#
-# For more information, consult the documentation:
-#
-#     <https://crate.io/docs/crate/reference/en/latest/config/>
-#
+# This file provides a stock configuration (with brief explanations) that
+# allows you to start CrateDB right away.
+
+# Commented settings have no effect. Some commented settings are provided your
+# convenience. To uncomment a setting, remove the leading "#" character.
+
+# For help modifying this configuration file, see
+# <https://crate.io/docs/crate/reference/en/latest/config/>
 
 
 # Basic setup
 # =============================================================================
 
-# This section can be used to configure basic setups.
-
 
 # Memory
 # -----------------------------------------------------------------------------
-
+s
 # Recommended configuration:
 #
-# - Set the environment variable `CRATE_HEAP_SIZE` to 25% of your memory
-#   (e.g. 16G, but not more than ~30G to benefit from `CompressedOops`). See
-#   <https://crate.io/docs/crate/howtos/en/latest/performance/memory.html> for
-#   more details.
+# - Disable swapping (see below).
 #
-# - Disable swapping (via `memory_lock` below).
+# - Set the environment variable `CRATE_HEAP_SIZE` to 25% of your memory
+#   (e.g. 16G, but not more than ~30G to benefit from `CompressedOops`).
 
 # Disable swapping
 # bootstrap.memory_lock: true
 
-# See <https://crate.io/docs/crate/howtos/en/latest/performance/memory.html>
-# for more information.
+# For more information, see
+# <https://crate.io/docs/crate/howtos/en/latest/performance/memory.html>
 
 
 # Persistence
@@ -53,32 +41,32 @@
 
 # CrateDB can utilize multiple volumes in parallel. Multiple paths must be
 # separated by commas (see example above).
-#
+
 # Make sure to set the ownership of configured data paths to `crate:crate` so
 # that CrateDB can write to them.
-#
-# See <https://crate.io/docs/crate/reference/en/latest/config/node.html#paths>
-# for more information.
+
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/latest/config/node.html#paths>
 
 
 # Networking
 # -----------------------------------------------------------------------------
 
+# WANRING: Never expose an unprotected node to the internet
+
 # Bind to an IP address or some network interface
 # network.host: _site_
 
-# Options for `network.host`:
+# Options for `network.host` (above):
 #
 #     - [IP ADDRESS]
 #     - _local_
 #     - _site_
 #     - _global_
 #     - _[INTERFACE]_
-#
-# See <https://crate.io/docs/crate/reference/en/4.5/config/node.html#hosts> for
-# more information.
-#
-# WANRING: Never expose an unprotected node to the internet.
+
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/4.5/config/node.html#hosts>
 
 
 # Clustering
@@ -86,14 +74,15 @@
 
 # Total amount of nodes
 # gateway.expected_nodes: 5
-#
+
 # Minimum nodes necessary for recovery (should be more than half of the nodes)
 # gateway.recover_after_nodes: 3
 
 # When configuring clustering, be careful to choose values that prevent
-# split-brain scenarios and data loss on recovery. See
+# split-brain scenarios and data loss on recovery.
+
+# For more information, see
 # <https://crate.io/docs/crate/reference/en/latest/concepts/clustering.html>
-# for more details.
 
 # The hosts that will initially form the cluster
 # discovery.seed_hosts:
@@ -105,36 +94,39 @@
 #     - host1
 #     - host2
 
-# For production clusters (i.e. not bound to the loopback address), all
-# master-eligible nodes must be listed for `initial_master_nodes` (CrateDB
-# versions 4.0 and higher). If this is not done, the cluster will not be able
-# to vote for an initial master node.
-#
-# See <https://crate.io/docs/crate/reference/en/latest/config/cluster.html> for
-# more information about clustering settings.
-#
-# For clustering how-to guides, see
-# <https://crate.io/docs/crate/howtos/en/latest/clustering/> for more
-# information.
+# WARNING: For production clusters (i.e., not bound to the loopback address),
+# the `initial_master_nodes` setting must list all master-eligible nodes (for
+# CrateDB versions 4.0 and higher). If this is not done, the cluster will not
+# be able to vote for an initial master node.
+
+# For reference information, see
+# <https://crate.io/docs/crate/reference/en/latest/config/cluster.html>
+
+# For how-to guides, see
+# <https://crate.io/docs/crate/howtos/en/latest/clustering/>
 
 
 # Advanced settings
 # =============================================================================
 
-# This section can be used to configure more advanced setups.
-
-# NOTE: Environment variables can be used in this file as configuration values
-# using the `${VARIABLE_NAME}` notation. For example:
+# TIP: Arbitrary environment variables <conf-env-app>` can be used as values in
+# a configuration file using the ``${VARIABLE_NAME}`` notation.
 #
-# node.attr.rack: ${RACK_ENV_VAR}
+# For example, if ``RACK_ENV_VAR`` was set as an environment variable before
+# running CrateDB, you could specify the following:
+#
+#     node.attr.rack: ${RACK_ENV_VAR}
 
 
 # JMX monitoring plugin
 # -----------------------------------------------------------------------------
 
-# Enables the `sys.jobs`, `sys.operations`, `sys.jobs_log` and
+# Enables the `sys.jobs`, `sys.operations`, `sys.jobs_log`, and
 # `sys.operations_log` tables
 # stats.enabled: true
+
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/latest/admin/monitoring.html>
 
 
 # Authentication
@@ -171,6 +163,9 @@ auth:
 # protocol. Using the stock configuration, it is not possible to connect from
 # any address except `localhost`.
 
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/latest/admin/auth/hba.html>
+
 
 # Trust-based authentication
 # '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -182,10 +177,13 @@ auth:
 # Authentication (`Authorization: Basic ...`) request header. If the
 # `Authorization` header is not set, a default username can be specified with
 # the following configuration:
-
+#
 # auth:
 #   trust:
 #     http_default_user: dustin
+
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/latest/admin/auth/methods.html>
 
 
 # User-defined functions (UDFs)
@@ -193,6 +191,9 @@ auth:
 
 # Disable JavaScript user-defined functions
 # lang.js.enabled: false
+
+# For more information, see
+# <https://crate.io/docs/crate/reference/en/latest/general/user-defined-functions.html>
 
 
 # Secured communications (SSL/TLS)
@@ -210,12 +211,12 @@ auth:
 # The password used to decrypt the keystore_file.jks
 # ssl.keystore_password: myKeyStorePasswd
 
-# The password entered at the end of the `keytool -genkey` command (if
+# The password entered when running the `keytool -genkey` command (if
 # different from `keystore_password`)
 # ssl.keystore_key_password: myKeyStorePasswd
 
 
-# Optional configuration for truststore
+# Optional configuration for the truststore
 # '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 # The full path to the node truststore file
