@@ -20,7 +20,7 @@ Then install python virtual environment by running::
 
     $ sudo apt-get install python3-venv
 
-To support symlinks, enable Developer Mode and run::
+To support symlinks, `enable Developer Mode`_ and run::
 
     $ git config --global core.symlinks true
 
