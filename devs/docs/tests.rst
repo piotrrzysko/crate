@@ -25,7 +25,8 @@ To support symlinks, `enable Developer Mode`_ and run::
 
     $ git config --global core.symlinks true
 
-After all configuration is done, launch WSL from the project directory and run::
+After all configuration is done, launch WSL from the project directory
+(by running ``wsl``) and run::
 
     $ ./gradlew itest
 
