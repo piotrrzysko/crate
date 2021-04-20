@@ -66,5 +66,5 @@ test method to enable more detailed logging. For example::
     @TestLogging("io.crate:DEBUG,io.crate.planner.consumer.NestedLoopConsumer:TRACE")
 
 .. _doctests: https://github.com/crate/crate/blob/master/blackbox/test_docs.py
-.. _WSL needs to be installed: https://www.howtogeek.com/249966/how-to-install-and-use-the-linux-bash-shell-on-windows-10/
+.. _WSL needs to be installed: https://docs.microsoft.com/en-us/windows/wsl/install-win10
 .. _enable Developer Mode: https://www.howtogeek.com/292914/what-is-developer-mode-in-windows-10/
