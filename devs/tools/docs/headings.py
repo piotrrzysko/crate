@@ -26,9 +26,9 @@ If you specify a value for `STRIP`, the program will strip that value from the
 left-hand side of every line. You can use this argument to process headings
 that are commented out (e.g., set `STRIP` to `#`).
 
-TIP: If the same identical heading structure ought to appear in two different
-files (e.g., config files that correspond one-to-one with sections in the
-documentation), you can use this tool to check whether that is true.
+TIP: If two different files contain a heading structure that needs to be kept
+in sync (e.g., config files that correspond one-to-one with sections in the
+documentation), you can use this tool to help you with that.
 
 For example:
 
@@ -49,10 +49,12 @@ import sys
 
 OUT_INDENT_PER_LEVEL = "  "
 
+
 def exit_help():
-    """Print help message and exit"""
+    """Print help message and exit."""
     print(__doc__.strip())
     sys.exit(0)
+
 
 try:
     target_filename = sys.argv[1]
@@ -61,23 +63,23 @@ except IndexError:
 
 try:
     root_heading = sys.argv[2]
-    root_re = re.compile('^ *{} *$'.format(re.escape(root_heading)))
+    root_re = re.compile("^ *{} *$".format(re.escape(root_heading)))
 except IndexError:
     root_heading = None
 
 try:
     left_strip = sys.argv[3]
-    left_strip_re = re.compile('^ *{} *'.format(re.escape(left_strip)))
+    left_strip_re = re.compile("^ *{} *".format(re.escape(left_strip)))
 except IndexError:
     left_strip = None
 
 # NOTE: We could be strict with spaces when constructing regular expressions,
 # but they can be useful for debugging purposes (allowing you to indent
-# headings for better visual distinguishably, and so on)
+# headings for better visual distinction, and so on)
 
 # Heading underscores with corresponding heading level
 # Cf. <https://github.com/crate/crate-docs/blob/main/style/rst.rst>
-heading_levels= {
+heading_levels = {
     "=": 1,
     "-": 2,
     "'": 3,
@@ -87,12 +89,12 @@ heading_levels= {
 
 heading_levels_re = {}
 for symbol, level in heading_levels.items():
-    symbol_re = re.compile('^ *({}+) *$'.format(re.escape(symbol)))
+    symbol_re = re.compile("^ *({}+) *$".format(re.escape(symbol)))
     heading_levels_re[symbol_re] = heading_levels[symbol]
 
-# Only read the YAML comments
+# Read lines and handle `STRIP` functionality
 source_lines = []
-with open(target_filename, 'r') as target_file:
+with open(target_filename, "r") as target_file:
     for line_str in target_file.readlines():
         if left_strip is not None:
             try:
@@ -102,13 +104,13 @@ with open(target_filename, 'r') as target_file:
         source_lines.append(line_str.strip())
 
 # Make a list of headings and their corresponding heading level
-heading_re = re.compile('[a-zA-Z0-9]+')
+heading_re = re.compile("[a-zA-Z0-9]+")
 headings = []
 for i, current_line in enumerate(source_lines):
     if not heading_re.match(current_line):
         continue
     try:
-        next_line = source_lines[i+1]
+        next_line = source_lines[i + 1]
     except IndexError:
         continue
     # Try to match next line against heading level patterns
@@ -121,6 +123,7 @@ for i, current_line in enumerate(source_lines):
 # Always discard the true root heading (i.e., document title)
 headings = headings[1:]
 
+# Handle `ROOT` functionality
 root_level = 0
 if root_heading is not None:
     i_first = None
@@ -136,12 +139,12 @@ if root_heading is not None:
             i_first = i + 1
             root_level = level
     if root_level == 0:
-        print('ERROR: No subheading matching `ROOT` value')
+        print("ERROR: No subheading matching `ROOT` value")
         sys.exit(1)
     headings = headings[i_first:i_last]
 
-# Output a representation of the heading structure
-heading_tree_str = ''
+# Summarize the heading structure
+heading_tree_str = ""
 for level, heading_text in headings:
     # Adjust level to root heading baseline
     level = level - root_level
