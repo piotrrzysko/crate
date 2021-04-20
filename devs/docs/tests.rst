@@ -10,7 +10,8 @@ Run the all of `doctests`_::
 
     $ ./gradlew itest
 
-For running itest on Windows WSL needs to be installed. If downloaded Linux distro comes without Java, install it by running the following commands::
+For running itest on Windows, `WSL needs to be installed`_. If downloaded Linux
+distro comes without Java, install it by running the following commands::
 
     $ sudo add-apt-repository ppa:openjdk-r/ppa
     $ sudo apt-get update
