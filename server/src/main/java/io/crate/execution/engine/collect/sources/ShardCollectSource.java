@@ -238,16 +238,8 @@ public class ShardCollectSource implements CollectSource {
              *
              * So we wrap the creation in a supplier to create the providers lazy
              */
-
-            // MapperService is null for closed indices
-            if (indexShard.mapperService() == null) {
-                LOGGER.warn("Index {} appears to be closed, skipping collector provider creation", indexShard.shardId().getIndexName());
-            } else {
-                Supplier<ShardCollectorProvider> providerSupplier = Suppliers.memoize(() ->
-                    shardCollectorProviderFactory.create(indexShard)
-                );
-                shards.put(indexShard.shardId(), providerSupplier);
-            }
+            Supplier<ShardCollectorProvider> providerSupplier = Suppliers.memoize(() -> shardCollectorProviderFactory.create(indexShard));
+            shards.put(indexShard.shardId(), providerSupplier);
         }
 
         @Override
@@ -265,6 +257,8 @@ public class ShardCollectSource implements CollectSource {
             }
         }
     }
+
+
 
 
     @Override

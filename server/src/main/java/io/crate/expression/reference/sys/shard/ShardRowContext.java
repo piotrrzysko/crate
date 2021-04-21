@@ -174,6 +174,10 @@ public class ShardRowContext {
         }
     }
 
+    public String indexState() {
+        return clusterService.state().metadata().index(indexParts.getTable()).getState().toString();
+    }
+
     @Nullable
     public String minLuceneVersion() {
         long numDocs;

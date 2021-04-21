@@ -54,13 +54,17 @@ None
 Changes
 =======
 
+- Added a ``table_state`` column to :ref:`sys-shards <sys-shards>` exposing
+  the state of the table associated with the shard.
+
+- Included the shard information for closed tables in ``sys.shards`` table.
+
 - Added support for reading ``cgroup`` information in the ``cgroup v2`` format.
 
 - Improved the internal throttling mechanism used for ``INSERT FROM QUERY`` and
   ``COPY FROM`` operations. This should lead to these queries utilizing more
   resources if the cluster can spare them.
 
-- Included the shard information for closed tables in ``sys.shards`` table.
 
 - Users can now read tables within the ``pg_catalog`` schema without explicit
   ``DQL`` permission. They will only see records the user has privileges on.
