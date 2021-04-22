@@ -397,7 +397,7 @@ auth:
 # <https://crate.io/reference/general/user-defined-functions.html>
 
 
-# Cluster settings -> Cluster-specific settings
+# Cluster-specific settings
 # -----------------------------------------------------------------------------
 
 # The cluster name identifies your cluster for auto-discovery. If you're
